@@ -1,6 +1,3 @@
-import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 import streamlit as st
 from rag.rag import build_rag_chain
 from database import (
@@ -8,16 +5,17 @@ from database import (
     save_message, get_chat_history, get_all_reports,
     get_report_by_id, delete_report
 )
+from config import get_settings
+from providers.llm_factory import get_llm
+from utils.logger import configure_logging
 
 # ── INIT ──────────────────────────────────────────────────────────────────
-load_dotenv()
+settings = get_settings()
+logger = configure_logging()
+logger.info("Launching %s", settings.app_name)
 init_db()
 
-llm = ChatGoogleGenerativeAI(
-    model="gemma-4-31b-it",
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
-    temperature=0.1
-)
+llm = get_llm(temperature=0.1)
 
 from models.analysis_models import BloodAnalysis
 
@@ -253,6 +251,34 @@ def extract_answer(result):
     return str(result)
 
 
+def serialize_blood_analysis(analysis) -> str:
+    blood_values = getattr(analysis, "blood_values", None)
+    if isinstance(analysis, dict):
+        blood_values = analysis.get("blood_values", blood_values)
+
+    if not blood_values:
+        return ""
+
+    lines = []
+    for blood_value in blood_values:
+        parameter = getattr(blood_value, "parameter", None)
+        value = getattr(blood_value, "value", None)
+        status = getattr(blood_value, "status", None)
+        reference_range = getattr(blood_value, "reference_range", None)
+
+        if isinstance(blood_value, dict):
+            parameter = blood_value.get("parameter", parameter)
+            value = blood_value.get("value", value)
+            status = blood_value.get("status", status)
+            reference_range = blood_value.get("reference_range", reference_range)
+
+        lines.append(
+            f"TEST: {parameter or '—'} | VALUE: {value or '—'} | STATUS: {status or 'NORMAL'} | REF: {reference_range or '—'}"
+        )
+
+    return "\n".join(lines)
+
+
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("""
@@ -384,8 +410,11 @@ Blood Report:
                 structured_llm = llm.with_structured_output(BloodAnalysis)
 
                 analysis = structured_llm.invoke(prompt_text)
-               
+                raw = serialize_blood_analysis(analysis)
 
+                st.session_state["analysis_summary"] = getattr(analysis, "patient_summary", None)
+                st.session_state["health_score"] = getattr(analysis, "health_score", None)
+                st.session_state["risk_level"] = getattr(analysis, "risk_level", None)
                 st.session_state["extracted_values"] = raw
                 st.session_state["report_text"]      = blood_report
 

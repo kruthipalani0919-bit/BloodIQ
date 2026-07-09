@@ -3,10 +3,7 @@ rag.py — builds the conversational RAG chain
 ChromaDB + HuggingFace local embeddings + Gemma 4
 """
 
-import os
-from dotenv import load_dotenv
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_chroma import Chroma
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -14,9 +11,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-
-load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+from providers.llm_factory import get_llm
 
 
 def build_rag_chain(blood_report_text: str):
@@ -37,11 +32,7 @@ def build_rag_chain(blood_report_text: str):
 
     retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemma-4-31b-it",
-        google_api_key=GOOGLE_API_KEY,
-        temperature=0.3
-    )
+    llm = get_llm(temperature=0.3)
 
     # Prompt — allows BOTH report-specific AND general medical questions
     prompt = ChatPromptTemplate.from_messages([

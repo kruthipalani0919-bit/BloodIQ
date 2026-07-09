@@ -1,7 +1,38 @@
 streamlit
+
+# LangChain
 langchain
-langchain-google-genai
+langchain-core
 langchain-community
+langchain-google-genai
+langchain-chroma
+langchain-huggingface
+langchain-text-splitters
+
+# Vector Database
 chromadb
+
+# Embeddings
+sentence-transformers
+
+# Google Gemini
+google-generativeai
+
+# Database
+sqlalchemy
+psycopg2-binary
+
+# Environment
 python-dotenv
+
+# Tokenizer
 tiktoken
+
+# Validation
+pydantic
+
+# PDF Support (future OCR)
+pypdf
+
+# Utilities
+requests
