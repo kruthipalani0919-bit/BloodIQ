@@ -1,25 +1,80 @@
-import streamlit as st
-from rag.rag import build_rag_chain
-from database import (
-    init_db, save_report, update_analysis, update_diet,
-    save_message, get_chat_history, get_all_reports,
-    get_report_by_id, delete_report
-)
-from config import get_settings
-from providers.llm_factory import get_llm
-from utils.logger import configure_logging
+import traceback
 
-# ── INIT ──────────────────────────────────────────────────────────────────
+try:
+    import streamlit as st
+
+    from rag.rag import build_rag_chain
+    from database import (
+    init_db,
+    save_report,
+    update_analysis,
+    update_diet,
+    save_message,
+    get_chat_history,
+    get_all_reports,
+    get_report_by_id,
+    get_dashboard_stats,
+    delete_report,
+)
+
+    from database.connection import get_session
+    from views.login import show_login
+    from views.register import show_register
+    from views.dashboard import show_dashboard
+    from views.analysis import show_analysis
+    from config import get_settings
+    from providers.llm_factory import get_llm
+    from utils.logger import configure_logging
+    from components.auth_forms import show_auth_forms
+    from components.sidebar import show_sidebar
+
+    from services.auth_service import (
+        register_user,
+        authenticate_user,
+        get_user_by_id,
+        verify_token,
+    )
+
+    from models.analysis_models import BloodAnalysis
+
+    print("✅ All imports completed successfully")
+
+except Exception:
+    traceback.print_exc()
+    raise
+
+# ─────────────────────────────────────────────
+
 settings = get_settings()
 logger = configure_logging()
 logger.info("Launching %s", settings.app_name)
+
 init_db()
 
 llm = get_llm(temperature=0.1)
 
-from models.analysis_models import BloodAnalysis
+st.set_page_config(
+    page_title="BloodIQ",
+    page_icon="🩸",
+    layout="wide",
+)
 
-st.set_page_config(page_title="BloodIQ", page_icon="🩸", layout="wide")
+
+# ------------------------------
+# Session State Initialization
+# ------------------------------
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "dashboard"
+
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if "token" not in st.session_state:
+    st.session_state.token = None
 
 # ── STYLES ────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -280,69 +335,8 @@ def serialize_blood_analysis(analysis) -> str:
 
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("""
-    <div class="sb-logo">
-        <div class="sb-logo-title">🩸 Blood<span class="sb-logo-dot">IQ</span></div>
-        <div class="sb-logo-sub">AI-powered blood work analysis</div>
-    </div>
-    """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sb-section-label">Actions</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sb-new-btn">', unsafe_allow_html=True)
-    if st.button("＋  New Analysis", use_container_width=True):
-        for key in ["report_id", "report_text", "extracted_values", "diet_plan",
-                    "rag_chain", "chat_history"]:
-            st.session_state.pop(key, None)
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="sb-section-label">Report History</div>', unsafe_allow_html=True)
-
-    all_reports = get_all_reports()
-    if not all_reports:
-        st.markdown("""
-        <div style="padding:0.8rem 1.2rem;">
-            <div style="font-size:0.75rem;color:#333;">No reports yet.<br>Run your first analysis above.</div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        for r in all_reports:
-            is_active = st.session_state.get("report_id") == r["id"]
-            badges = ""
-            if r["has_analysis"]:
-                badges += '<span class="hc-badge analysis">Analyzed</span>'
-            if r["has_diet"]:
-                badges += '<span class="hc-badge diet">Diet Plan</span>'
-
-            st.markdown(f"""
-            <div class="history-card {'active' if is_active else ''}">
-                <div class="hc-date">{r["created_at"]}</div>
-                <div class="hc-preview">{r["preview"]}</div>
-                <div class="hc-badges">{badges}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                if st.button("Load", key=f"load_{r['id']}", use_container_width=True):
-                    data = get_report_by_id(r["id"])
-                    st.session_state["report_id"]        = data["id"]
-                    st.session_state["report_text"]      = data["report_text"]
-                    st.session_state["extracted_values"] = data["extracted_values"]
-                    st.session_state["diet_plan"]        = data["diet_plan"]
-                    st.session_state["chat_history"]     = get_chat_history(data["id"])
-                    st.session_state.pop("rag_chain", None)
-                    st.rerun()
-            with col2:
-                if st.button("🗑", key=f"del_{r['id']}", use_container_width=True):
-                    delete_report(r["id"])
-                    if st.session_state.get("report_id") == r["id"]:
-                        for key in ["report_id", "report_text", "extracted_values",
-                                    "diet_plan", "rag_chain", "chat_history"]:
-                            st.session_state.pop(key, None)
-                    st.rerun()
-
+show_sidebar()
 
 # ── TOPBAR ────────────────────────────────────────────────────────────────
 report_id = st.session_state.get("report_id")
@@ -359,210 +353,276 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-# ── STAGE 1 ───────────────────────────────────────────────────────────────
-st.markdown("""
-<div class="stage-row">
-    <div class="stage-num">1</div>
-    <div class="stage-lbl">Paste Report &amp; Analyze</div>
-</div>
-""", unsafe_allow_html=True)
+# # ── STAGE 1 ───────────────────────────────────────────────────────────────
+# st.markdown("""
+# <div class="stage-row">
+#     <div class="stage-num">1</div>
+#     <div class="stage-lbl">Paste Report &amp; Analyze</div>
+# </div>
+# """, unsafe_allow_html=True)
 
-left, right = st.columns([1, 1], gap="large")
+# left, right = st.columns([1, 1], gap="large")
 
-with left:
-    default_text = st.session_state.get("report_text", "")
-    blood_report = st.text_area(
-        label="report",
-        value=default_text,
-        placeholder="Paste your blood report here...\n\nHemoglobin: 10.2 g/dL  (Ref: 13.5–17.5)\nWBC: 11,000 /µL  (Ref: 4,500–11,000)\n...",
-        height=380,
-        label_visibility="collapsed"
-    )
-    analyze_clicked = st.button("🔬  Analyze Report", use_container_width=True)
+# with left:
+#     default_text = st.session_state.get("report_text", "")
+#     blood_report = st.text_area(
+#         label="report",
+#         value=default_text,
+#         placeholder="Paste your blood report here...\n\nHemoglobin: 10.2 g/dL  (Ref: 13.5–17.5)\nWBC: 11,000 /µL  (Ref: 4,500–11,000)\n...",
+#         height=380,
+#         label_visibility="collapsed"
+#     )
+#     analyze_clicked = st.button("🔬  Analyze Report", use_container_width=True)
 
-with right:
-    if not st.session_state.get("extracted_values"):
-        st.markdown("""
-        <div class="empty-state">
-            <div class="empty-icon">📊</div>
-            <div class="empty-title">Test results appear here</div>
-            <div class="empty-sub">Paste a report on the left<br>and click Analyze</div>
-        </div>
-        """, unsafe_allow_html=True)
+# with right:
+#     if not st.session_state.get("extracted_values"):
+#         st.markdown("""
+#         <div class="empty-state">
+#             <div class="empty-icon">📊</div>
+#             <div class="empty-title">Test results appear here</div>
+#             <div class="empty-sub">Paste a report on the left<br>and click Analyze</div>
+#         </div>
+#         """, unsafe_allow_html=True)
 
-    if analyze_clicked:
-        if not blood_report.strip():
-            st.warning("Paste a blood report first.")
-        else:
-            with st.spinner("Reading and classifying values..."):
-                prompt_text = f"""You are a medical data extraction assistant.
+#     if analyze_clicked:
+#         if not blood_report.strip():
+#             st.warning("Paste a blood report first.")
+#         else:
+#             with st.spinner("Reading and classifying values..."):
+#                 prompt_text = f"""You are a medical data extraction assistant.
 
-Extract EVERY test from the blood report. For each test output EXACTLY this format — one per line:
-TEST: <name> | VALUE: <result> | STATUS: <HIGH/LOW/NORMAL> | REF: <reference range>
+# Extract EVERY test from the blood report. For each test output EXACTLY this format — one per line:
+# TEST: <name> | VALUE: <result> | STATUS: <HIGH/LOW/NORMAL> | REF: <reference range>
 
-Rules:
-- STATUS must be exactly HIGH, LOW, or NORMAL only
-- No intro, no summary, no blank lines
-- Include every single test
+# Rules:
+# - STATUS must be exactly HIGH, LOW, or NORMAL only
+# - No intro, no summary, no blank lines
+# - Include every single test
 
-Blood Report:
-{blood_report}"""
-                structured_llm = llm.with_structured_output(BloodAnalysis)
+# Blood Report:
+# {blood_report}"""
+#                 structured_llm = llm.with_structured_output(BloodAnalysis)
 
-                analysis = structured_llm.invoke(prompt_text)
-                raw = serialize_blood_analysis(analysis)
+#                 analysis = structured_llm.invoke(prompt_text)
+#                 raw = serialize_blood_analysis(analysis)
 
-                st.session_state["analysis_summary"] = getattr(analysis, "patient_summary", None)
-                st.session_state["health_score"] = getattr(analysis, "health_score", None)
-                st.session_state["risk_level"] = getattr(analysis, "risk_level", None)
-                st.session_state["extracted_values"] = raw
-                st.session_state["report_text"]      = blood_report
+#                 st.session_state["analysis_summary"] = getattr(analysis, "patient_summary", None)
+#                 st.session_state["health_score"] = getattr(analysis, "health_score", None)
+#                 st.session_state["risk_level"] = getattr(analysis, "risk_level", None)
+#                 st.session_state["extracted_values"] = raw
+#                 st.session_state["report_text"]      = blood_report
 
-                # Save or update in database
-                if not st.session_state.get("report_id"):
-                    rid = save_report(blood_report)
-                    st.session_state["report_id"] = rid
-                else:
-                    rid = st.session_state["report_id"]
-                update_analysis(rid, raw)
-                st.rerun()
+#                 # Save or update in database
+#                 if not st.session_state.get("report_id"):
+#                     rid = save_report(blood_report)
+#                     st.session_state["report_id"] = rid
+#                 else:
+#                     rid = st.session_state["report_id"]
+#                 update_analysis(rid, raw)
+#                 st.rerun()
 
-    if st.session_state.get("extracted_values"):
-        cards_html, count = render_cards(st.session_state["extracted_values"])
-        if count > 0:
-            st.markdown(cards_html, unsafe_allow_html=True)
-        else:
-            st.info("Could not parse structured results. Check the report format.")
-
-
-# ── STAGE 2 ───────────────────────────────────────────────────────────────
-if st.session_state.get("extracted_values"):
-    st.markdown('<hr class="sdiv"/>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="stage-row">
-        <div class="stage-num">2</div>
-        <div class="stage-lbl">Indian Diet Plan</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Show saved diet plan if loaded from history
-    if st.session_state.get("diet_plan"):
-        st.markdown(
-            f'<div class="diet-box">{st.session_state["diet_plan"].replace(chr(10), "<br>")}</div>',
-            unsafe_allow_html=True
-        )
-        if st.button("🔄  Regenerate Diet Plan", use_container_width=False):
-            st.session_state.pop("diet_plan", None)
-            st.rerun()
-    else:
-        if st.button("🥗  Generate Diet Plan", use_container_width=False):
-            with st.spinner("Building your personalized diet plan..."):
-                diet_prompt = f"""You are a clinical nutritionist specializing in Indian dietary habits.
-
-From the blood work below, identify ONLY the abnormal values (HIGH or LOW).
-Respond in exactly this structure:
-
-**Health Summary**
-3-4 sentences in simple language about what the key abnormal results mean for this patient's health. Speak like a caring doctor.
-
-**Foods to Avoid**
-- List 4-5 specific Indian foods that directly worsen the abnormal values. One per line.
-
-**Foods to Eat More**
-- List 4-5 specific Indian foods that directly help correct the abnormal values. One per line.
-
-Focus only on abnormal values. Be concise.
-
-Blood Work:
-{st.session_state["extracted_values"]}"""
-                diet_resp = llm.invoke(diet_prompt)
-                diet_text = diet_resp.content
-                if isinstance(diet_text, list):
-                    diet_text = "\n".join([r if isinstance(r, str) else r.get("text","") for r in diet_text])
-
-                st.session_state["diet_plan"] = diet_text
-                update_diet(st.session_state["report_id"], diet_text)
-
-            st.markdown(
-                f'<div class="diet-box">{diet_text.replace(chr(10), "<br>")}</div>',
-                unsafe_allow_html=True
-            )
+#     if st.session_state.get("extracted_values"):
+#         cards_html, count = render_cards(st.session_state["extracted_values"])
+#         if count > 0:
+#             st.markdown(cards_html, unsafe_allow_html=True)
+#         else:
+#             st.info("Could not parse structured results. Check the report format.")
 
 
-# ── STAGE 3 ───────────────────────────────────────────────────────────────
-if st.session_state.get("report_text"):
-    st.markdown('<hr class="sdiv"/>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="stage-row">
-        <div class="stage-num">3</div>
-        <div class="stage-lbl">Health Assistant Chat</div>
-    </div>
-    """, unsafe_allow_html=True)
+# # ── STAGE 2 ───────────────────────────────────────────────────────────────
+# if st.session_state.get("extracted_values"):
+#     st.markdown('<hr class="sdiv"/>', unsafe_allow_html=True)
+#     st.markdown("""
+#     <div class="stage-row">
+#         <div class="stage-num">2</div>
+#         <div class="stage-lbl">Indian Diet Plan</div>
+#     </div>
+#     """, unsafe_allow_html=True)
 
-    # Build RAG chain if not already built
-    if "rag_chain" not in st.session_state:
-        with st.spinner("Initialising health assistant..."):
-            combined = f"""BLOOD REPORT:
-{st.session_state["report_text"]}
+#     # Show saved diet plan if loaded from history
+#     if st.session_state.get("diet_plan"):
+#         st.markdown(
+#             f'<div class="diet-box">{st.session_state["diet_plan"].replace(chr(10), "<br>")}</div>',
+#             unsafe_allow_html=True
+#         )
+#         if st.button("🔄  Regenerate Diet Plan", use_container_width=False):
+#             st.session_state.pop("diet_plan", None)
+#             st.rerun()
+#     else:
+#         if st.button("🥗  Generate Diet Plan", use_container_width=False):
+#             with st.spinner("Building your personalized diet plan..."):
+#                 diet_prompt = f"""You are a clinical nutritionist specializing in Indian dietary habits.
 
-ANALYSIS:
-{st.session_state.get("extracted_values", "")}"""
-            st.session_state["rag_chain"] = build_rag_chain(combined)
-        st.success("✅ Assistant ready — ask anything about your health or your report.")
+# From the blood work below, identify ONLY the abnormal values (HIGH or LOW).
+# Respond in exactly this structure:
 
-    if "chat_history" not in st.session_state:
-        st.session_state["chat_history"] = []
+# **Health Summary**
+# 3-4 sentences in simple language about what the key abnormal results mean for this patient's health. Speak like a caring doctor.
 
-    # Render existing chat
-    for msg in st.session_state["chat_history"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+# **Foods to Avoid**
+# - List 4-5 specific Indian foods that directly worsen the abnormal values. One per line.
 
-    # Suggested questions when chat is empty
-    if not st.session_state["chat_history"]:
-        st.markdown("""
-        <div style="margin:0.5rem 0 1rem 0;">
-            <div style="font-size:0.72rem;color:#444;letter-spacing:1px;text-transform:uppercase;margin-bottom:0.5rem;">Try asking</div>
-        </div>
-        """, unsafe_allow_html=True)
-        suggestions = [
-            "What does it mean if my hemoglobin is low?",
-            "Which of my values are most concerning?",
-            "What is the difference between HDL and LDL cholesterol?",
-            "What lifestyle changes can help improve my results?"
-        ]
-        cols = st.columns(2)
-        for i, suggestion in enumerate(suggestions):
-            with cols[i % 2]:
-                if st.button(suggestion, key=f"sug_{i}", use_container_width=True):
-                    st.session_state["chat_history"].append({"role": "user", "content": suggestion})
-                    save_message(st.session_state["report_id"], "user", suggestion)
-                    with st.spinner("Thinking..."):
-                        result = st.session_state["rag_chain"].invoke(
-                            {"input": suggestion},
-                            config={"configurable": {"session_id": f"session_{st.session_state['report_id']}"}}
-                        )
-                        answer = extract_answer(result)
-                    st.session_state["chat_history"].append({"role": "assistant", "content": answer})
-                    save_message(st.session_state["report_id"], "assistant", answer)
+# **Foods to Eat More**
+# - List 4-5 specific Indian foods that directly help correct the abnormal values. One per line.
+
+# Focus only on abnormal values. Be concise.
+
+# Blood Work:
+# {st.session_state["extracted_values"]}"""
+#                 diet_resp = llm.invoke(diet_prompt)
+#                 diet_text = diet_resp.content
+#                 if isinstance(diet_text, list):
+#                     diet_text = "\n".join([r if isinstance(r, str) else r.get("text","") for r in diet_text])
+
+#                 st.session_state["diet_plan"] = diet_text
+#                 update_diet(st.session_state["report_id"], diet_text)
+
+#             st.markdown(
+#                 f'<div class="diet-box">{diet_text.replace(chr(10), "<br>")}</div>',
+#                 unsafe_allow_html=True
+#             )
+
+
+# # ── STAGE 3 ───────────────────────────────────────────────────────────────
+# if st.session_state.get("report_text"):
+#     st.markdown('<hr class="sdiv"/>', unsafe_allow_html=True)
+#     st.markdown("""
+#     <div class="stage-row">
+#         <div class="stage-num">3</div>
+#         <div class="stage-lbl">Health Assistant Chat</div>
+#     </div>
+#     """, unsafe_allow_html=True)
+
+#     # Build RAG chain if not already built
+#     if "rag_chain" not in st.session_state:
+#         with st.spinner("Initialising health assistant..."):
+#             combined = f"""BLOOD REPORT:
+# {st.session_state["report_text"]}
+
+# ANALYSIS:
+# {st.session_state.get("extracted_values", "")}"""
+#             st.session_state["rag_chain"] = build_rag_chain(combined)
+#         st.success("✅ Assistant ready — ask anything about your health or your report.")
+
+#     if "chat_history" not in st.session_state:
+#         st.session_state["chat_history"] = []
+
+#     # Render existing chat
+#     for msg in st.session_state["chat_history"]:
+#         with st.chat_message(msg["role"]):
+#             st.markdown(msg["content"])
+
+#     # Suggested questions when chat is empty
+#     if not st.session_state["chat_history"]:
+#         st.markdown("""
+#         <div style="margin:0.5rem 0 1rem 0;">
+#             <div style="font-size:0.72rem;color:#444;letter-spacing:1px;text-transform:uppercase;margin-bottom:0.5rem;">Try asking</div>
+#         </div>
+#         """, unsafe_allow_html=True)
+#         suggestions = [
+#             "What does it mean if my hemoglobin is low?",
+#             "Which of my values are most concerning?",
+#             "What is the difference between HDL and LDL cholesterol?",
+#             "What lifestyle changes can help improve my results?"
+#         ]
+#         cols = st.columns(2)
+#         for i, suggestion in enumerate(suggestions):
+#             with cols[i % 2]:
+#                 if st.button(suggestion, key=f"sug_{i}", use_container_width=True):
+#                     st.session_state["chat_history"].append({"role": "user", "content": suggestion})
+#                     save_message(st.session_state["report_id"], "user", suggestion)
+#                     with st.spinner("Thinking..."):
+#                         result = st.session_state["rag_chain"].invoke(
+#                             {"input": suggestion},
+#                             config={"configurable": {"session_id": f"session_{st.session_state['report_id']}"}}
+#                         )
+#                         answer = extract_answer(result)
+#                     st.session_state["chat_history"].append({"role": "assistant", "content": answer})
+#                     save_message(st.session_state["report_id"], "assistant", answer)
+#                     st.rerun()
+
+#     user_question = st.chat_input("Ask about your report or any health topic...")
+
+#     if user_question:
+#         st.session_state["chat_history"].append({"role": "user", "content": user_question})
+#         save_message(st.session_state["report_id"], "user", user_question)
+
+#         with st.chat_message("user"):
+#             st.markdown(user_question)
+
+#         with st.chat_message("assistant"):
+#             with st.spinner("Thinking..."):
+#                 result = st.session_state["rag_chain"].invoke(
+#                     {"input": user_question},
+#                     config={"configurable": {"session_id": f"session_{st.session_state['report_id']}"}}
+#                 )
+#                 answer = extract_answer(result)
+#             st.markdown(answer)
+#             save_message(st.session_state["report_id"], "assistant", answer)
+#             st.session_state["chat_history"].append({"role": "assistant", "content": answer})
+
+
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "dashboard"
+
+if not st.session_state.logged_in:
+
+    auth = show_auth_forms()
+
+    if auth:
+
+        with get_session() as db:
+
+            if auth["action"] == "register":
+                try:
+                    register_user(
+                        db=db,
+                        email=auth["email"],
+                        password=auth["password"],
+                        full_name=auth["full_name"],
+                        age=auth["age"],
+                        gender=auth["gender"],
+                    )
+                    st.success("Registration Successful! Please login.")
+
+                except Exception as e:
+                    st.error(str(e))
+
+            elif auth["action"] == "login":
+
+                result = authenticate_user(
+                    db=db,
+                    email=auth["email"],
+                    password=auth["password"],
+                )
+
+                if result:
+
+                    user, token = result
+
+                    st.session_state.logged_in = True
+                    st.session_state.user = user
+                    st.session_state.token = token
                     st.rerun()
 
-    user_question = st.chat_input("Ask about your report or any health topic...")
+                else:
+                    st.error("Invalid email or password")
 
-    if user_question:
-        st.session_state["chat_history"].append({"role": "user", "content": user_question})
-        save_message(st.session_state["report_id"], "user", user_question)
+else:
 
-        with st.chat_message("user"):
-            st.markdown(user_question)
+    if st.session_state.current_page == "dashboard":
+        show_dashboard()
 
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                result = st.session_state["rag_chain"].invoke(
-                    {"input": user_question},
-                    config={"configurable": {"session_id": f"session_{st.session_state['report_id']}"}}
-                )
-                answer = extract_answer(result)
-            st.markdown(answer)
-            save_message(st.session_state["report_id"], "assistant", answer)
-            st.session_state["chat_history"].append({"role": "assistant", "content": answer})
+    elif st.session_state.current_page == "analysis":
+        show_analysis(
+            llm=llm,
+            save_report=save_report,
+            update_analysis=update_analysis,
+            update_diet=update_diet,
+            render_cards=render_cards,
+            serialize_blood_analysis=serialize_blood_analysis,
+            BloodAnalysis=BloodAnalysis,
+            build_rag_chain=build_rag_chain,
+            extract_answer=extract_answer,
+            save_message=save_message,
+        )

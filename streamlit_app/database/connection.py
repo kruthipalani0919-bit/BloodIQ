@@ -8,9 +8,22 @@ from sqlalchemy.orm import Session, declarative_base, sessionmaker
 from database.exceptions import DatabaseConnectionError, DatabaseError
 from database.settings import get_database_settings
 from utils.logger import get_logger
+from supabase import create_client
+from dotenv import load_dotenv
+import os
 
 settings = get_database_settings()
 logger = get_logger(__name__)
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(
+    SUPABASE_URL,
+    SUPABASE_KEY
+)
 
 engine_kwargs = {
     "echo": settings.echo_sql,
@@ -61,31 +74,51 @@ def initialize_database() -> None:
     from database import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
-
-    if settings.database_url.startswith("sqlite"):
-        _apply_sqlite_schema_compatibility()
+    _apply_schema_migrations()
 
 
-def _apply_sqlite_schema_compatibility() -> None:
+def _apply_schema_migrations() -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
 
     with engine.begin() as connection:
         if "reports" in tables:
-            report_columns = {column["name"] for column in inspector.get_columns("reports")}
-            if "updated_at" not in report_columns:
+            columns = {column["name"] for column in inspector.get_columns("reports")}
+            
+            if "updated_at" not in columns:
+                if settings.database_url.startswith("sqlite"):
+                    connection.execute(text("ALTER TABLE reports ADD COLUMN updated_at DATETIME"))
+                else:
+                    connection.execute(text("ALTER TABLE reports ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
                 connection.execute(
-                    text("ALTER TABLE reports ADD COLUMN updated_at DATETIME")
-                )
-                connection.execute(
-                    text(
-                        "UPDATE reports SET updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)"
-                    )
+                    text("UPDATE reports SET updated_at = COALESCE(created_at, CURRENT_TIMESTAMP)")
                 )
 
+            if "user_id" not in columns:
+                if settings.database_url.startswith("sqlite"):
+                    connection.execute(text("ALTER TABLE reports ADD COLUMN user_id INTEGER"))
+                else:
+                    connection.execute(text("ALTER TABLE reports ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"))
+            
+            if "report_name" not in columns:
+                connection.execute(text("ALTER TABLE reports ADD COLUMN report_name VARCHAR(255)"))
+            
+            if "report_type" not in columns:
+                connection.execute(text("ALTER TABLE reports ADD COLUMN report_type VARCHAR(50)"))
+                
+            if "uploaded_file" not in columns:
+                connection.execute(text("ALTER TABLE reports ADD COLUMN uploaded_file TEXT"))
+                
+            if "report_date" not in columns:
+                if settings.database_url.startswith("sqlite"):
+                    connection.execute(text("ALTER TABLE reports ADD COLUMN report_date DATETIME"))
+                else:
+                    connection.execute(text("ALTER TABLE reports ADD COLUMN report_date TIMESTAMP"))
+
         if "chat_messages" in tables:
-            message_columns = {column["name"] for column in inspector.get_columns("chat_messages")}
-            if "created_at" not in message_columns:
-                connection.execute(
-                    text("ALTER TABLE chat_messages ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
-                )
+            columns = {column["name"] for column in inspector.get_columns("chat_messages")}
+            if "created_at" not in columns:
+                if settings.database_url.startswith("sqlite"):
+                    connection.execute(text("ALTER TABLE chat_messages ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"))
+                else:
+                    connection.execute(text("ALTER TABLE chat_messages ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))

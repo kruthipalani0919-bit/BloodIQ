@@ -46,6 +46,7 @@ class Settings:
     database_url: str
     log_level: str
     log_file: str
+    jwt_secret_key: str
 
 
 @lru_cache(maxsize=1)
@@ -62,4 +63,5 @@ def get_settings() -> Settings:
         database_url=_database_url(),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         log_file=os.getenv("LOG_FILE", "logs/bloodiq.log"),
+        jwt_secret_key=os.getenv("JWT_SECRET_KEY", "bloodiq-local-dev-secret-key-change-me-in-production"),
     )
