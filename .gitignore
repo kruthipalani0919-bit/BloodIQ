@@ -16,9 +16,14 @@ venv/
 # Databases
 *.db
 *.sqlite3
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # Logs
 *.log
+logs/
+streamlit_app/logs/
 
 # VS Code
 .vscode/
