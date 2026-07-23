@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import bcrypt
 import jwt
-from sqlalchemy.orm import Session
-from database.models import User
+from database.connection import supabase
+from types import SimpleNamespace
 from config import get_settings
 from utils.logger import get_logger
 
@@ -52,56 +52,62 @@ def verify_token(token: str) -> int | None:
     return None
 
 
-def get_user_by_email(db: Session, email: str) -> User | None:
-    """Query a user by their email address."""
-    return db.query(User).filter(User.email == email.strip().lower()).first()
-
-
-def get_user_by_id(db: Session, user_id: int) -> User | None:
-    """Query a user by their ID."""
-    return db.query(User).filter(User.id == user_id).first()
-
 
 def register_user(
-    db: Session,
-    email: str,
-    password: str,
-    full_name: str,
-    age: int | None = None,
-    gender: str | None = None,
-) -> User:
-    """Register a new user in the database."""
-    email_clean = email.strip().lower()
-    existing = get_user_by_email(db, email_clean)
-    if existing:
-        raise ValueError(f"User with email '{email_clean}' already exists")
+    db,
+    email,
+    password,
+    full_name,
+    age=None,
+    gender=None,
+):
+    email = email.strip().lower()
+
+    existing = (
+        supabase.table("users")
+        .select("*")
+        .eq("email", email)
+        .execute()
+    )
+
+    if existing.data:
+        raise ValueError("User already exists")
 
     hashed = hash_password(password)
-    user = User(
-        email=email_clean,
-        password_hash=hashed,
-        full_name=full_name.strip(),
-        age=age,
-        gender=gender,
+
+    result = (
+        supabase.table("users")
+        .insert({
+            "email": email,
+            "password_hash": hashed,
+            "full_name": full_name,
+            "age": age,
+            "gender": gender,
+        })
+        .execute()
     )
-    db.add(user)
-    db.flush()  # populate ID
-    logger.info("Registered user %s (ID: %d)", email_clean, user.id)
-    return user
+
+    return SimpleNamespace(**result.data[0])
 
 
-def authenticate_user(db: Session, email: str, password: str) -> tuple[User, str] | None:
-    """Authenticate a user and return the user object and a JWT token."""
-    email_clean = email.strip().lower()
-    user = get_user_by_email(db, email_clean)
-    if not user:
-        logger.info("Authentication failed: user %s not found", email_clean)
+def authenticate_user(db, email, password):
+    email = email.strip().lower()
+
+    result = (
+        supabase.table("users")
+        .select("*")
+        .eq("email", email)
+        .execute()
+    )
+
+    if not result.data:
         return None
 
-    if not verify_password(password, user.password_hash):
-        logger.info("Authentication failed: invalid password for user %s", email_clean)
+    user = result.data[0]
+
+    if not verify_password(password, user["password_hash"]):
         return None
 
-    token = generate_token(user.id)
-    logger.info("User %s logged in successfully", email_clean)
-    return user, token
+    token = generate_token(user["id"])
+
+    return SimpleNamespace(**user), token
