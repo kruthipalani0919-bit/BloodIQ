@@ -27,6 +27,8 @@ try:
     from utils.logger import configure_logging
     from components.auth_forms import show_auth_forms
     from components.sidebar import show_sidebar
+    from views.reports import show_reports
+    from views.assistant import show_assistant
 
     from services.auth_service import (
         register_user,
@@ -335,7 +337,8 @@ def serialize_blood_analysis(analysis) -> str:
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
 
-show_sidebar()
+if st.session_state.logged_in:
+    show_sidebar()
 
 # ── TOPBAR ────────────────────────────────────────────────────────────────
 report_id = st.session_state.get("report_id")
@@ -608,20 +611,24 @@ if not st.session_state.logged_in:
                     st.error("Invalid email or password")
 
 else:
-
     if st.session_state.current_page == "dashboard":
-        show_dashboard()
+     show_dashboard()
 
     elif st.session_state.current_page == "analysis":
-        show_analysis(
-            llm=llm,
-            save_report=save_report,
-            update_analysis=update_analysis,
-            update_diet=update_diet,
-            render_cards=render_cards,
-            serialize_blood_analysis=serialize_blood_analysis,
-            BloodAnalysis=BloodAnalysis,
-            build_rag_chain=build_rag_chain,
-            extract_answer=extract_answer,
-            save_message=save_message,
-        )
+      show_analysis(
+        llm=llm,
+        save_report=save_report,
+        update_analysis=update_analysis,
+        update_diet=update_diet,
+        render_cards=render_cards,
+        serialize_blood_analysis=serialize_blood_analysis,
+        BloodAnalysis=BloodAnalysis,
+        build_rag_chain=build_rag_chain,
+        extract_answer=extract_answer,
+        save_message=save_message,
+    )
+
+    elif st.session_state.current_page == "reports":
+      show_reports()
+    elif st.session_state.current_page == "assistant":
+      show_assistant()

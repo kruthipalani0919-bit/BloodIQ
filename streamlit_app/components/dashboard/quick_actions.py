@@ -17,14 +17,7 @@ def show_quick_actions():
             st.rerun()
 
     with col2:
-        if st.button("🎙 Voice Assistant", use_container_width=True):
-            st.info("Voice Assistant will be added soon.")
+        if st.button("🤖 AI Health Assistant", use_container_width=True):
+            st.info("AI Health Assistant will be added soon.")
 
-    with col3:
-        if st.button("💬 Health Chat", use_container_width=True):
-            st.session_state.current_page = "analysis"
-            st.rerun()
-
-    with col4:
-        if st.button("📜 Report History", use_container_width=True):
-            st.info("History page coming soon.")
+   
