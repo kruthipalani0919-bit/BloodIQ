@@ -31,7 +31,6 @@ try:
     from services.auth_service import (
         register_user,
         authenticate_user,
-        get_user_by_id,
         verify_token,
     )
 
