@@ -176,8 +176,12 @@ def show_analysis(
 
         # Render existing chat
         for msg in st.session_state["chat_history"]:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+             with st.chat_message(
+                msg["role"],
+                avatar="🤖" if msg["role"] == "assistant" else "👤",
+         ):
+              st.markdown(msg["content"])
+      
 
         # Suggested questions when chat is empty
         if not st.session_state["chat_history"]:
@@ -214,10 +218,10 @@ def show_analysis(
             st.session_state["chat_history"].append({"role": "user", "content": user_question})
             save_message(st.session_state["report_id"], "user", user_question)
 
-            with st.chat_message("user"):
+            with st.chat_message("user", avatar="👤"):
                 st.markdown(user_question)
 
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar="🤖"):
                 with st.spinner("Thinking..."):
                     result = st.session_state["rag_chain"].invoke(
                         {"input": user_question},

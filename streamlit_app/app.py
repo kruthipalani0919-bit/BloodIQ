@@ -29,6 +29,7 @@ try:
     from components.sidebar import show_sidebar
     from views.reports import show_reports
     from views.assistant import show_assistant
+    from components.assistant_widget import show_assistant_widget
 
     from services.auth_service import (
         register_user,
@@ -632,3 +633,5 @@ else:
       show_reports()
     elif st.session_state.current_page == "assistant":
       show_assistant()
+    if st.session_state.get("logged_in"):
+       show_assistant_widget(llm)
